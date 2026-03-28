@@ -214,23 +214,32 @@ def draw_track(frame):
     cv2.polylines(overlay, [pts], isClosed=False, color=(20, 20, 220), thickness=160, lineType=cv2.LINE_AA)
     # Inner kerb (White)
     cv2.polylines(overlay, [pts], isClosed=False, color=(230, 230, 230), thickness=140, lineType=cv2.LINE_AA)
-    # Asphalt
-    cv2.polylines(overlay, [pts], isClosed=False, color=(45, 45, 45), thickness=120, lineType=cv2.LINE_AA)
     
-    cv2.addWeighted(overlay, 0.85, frame, 0.15, 0, frame)
+    # Asphalt / Line inbetween -> make it a mask to let the camera feed directly through!
+    asphalt_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+    cv2.polylines(asphalt_mask, [pts], isClosed=False, color=255, thickness=120, lineType=cv2.LINE_AA)
+    
+    # Restore original frame pixels inside the asphalt mask
+    overlay[asphalt_mask == 255] = frame[asphalt_mask == 255]
+    
+    # Blend the kerbs with high transparency so hands go "over" the track easily
+    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
 
-    # Start/Finish checkerboards at garage exit/entry
+    # Start/Finish checkerboards (also masked visually with transparency)
+    checker = frame.copy()
     for y in range(40, 160, 20):
-        cv2.rectangle(frame, (WALL_X, y), (WALL_X + 10, y + 10), WHITE, -1)
-        cv2.rectangle(frame, (WALL_X + 10, y + 10), (WALL_X + 20, y + 20), WHITE, -1)
-        cv2.rectangle(frame, (WALL_X + 10, y), (WALL_X + 20, y + 10), BLACK, -1)
-        cv2.rectangle(frame, (WALL_X, y + 10), (WALL_X + 10, y + 20), BLACK, -1)
+        cv2.rectangle(checker, (WALL_X, y), (WALL_X + 10, y + 10), WHITE, -1)
+        cv2.rectangle(checker, (WALL_X + 10, y + 10), (WALL_X + 20, y + 20), WHITE, -1)
+        cv2.rectangle(checker, (WALL_X + 10, y), (WALL_X + 20, y + 10), BLACK, -1)
+        cv2.rectangle(checker, (WALL_X, y + 10), (WALL_X + 10, y + 20), BLACK, -1)
 
     for y in range(560, 680, 20):
-        cv2.rectangle(frame, (WALL_X, y), (WALL_X + 10, y + 10), WHITE, -1)
-        cv2.rectangle(frame, (WALL_X + 10, y + 10), (WALL_X + 20, y + 20), WHITE, -1)
-        cv2.rectangle(frame, (WALL_X + 10, y), (WALL_X + 20, y + 10), BLACK, -1)
-        cv2.rectangle(frame, (WALL_X, y + 10), (WALL_X + 10, y + 20), BLACK, -1)
+        cv2.rectangle(checker, (WALL_X, y), (WALL_X + 10, y + 10), WHITE, -1)
+        cv2.rectangle(checker, (WALL_X + 10, y + 10), (WALL_X + 20, y + 20), WHITE, -1)
+        cv2.rectangle(checker, (WALL_X + 10, y), (WALL_X + 20, y + 10), BLACK, -1)
+        cv2.rectangle(checker, (WALL_X, y + 10), (WALL_X + 10, y + 20), BLACK, -1)
+        
+    cv2.addWeighted(checker, 0.45, frame, 0.55, 0, frame)
 
 # ── Zones & Wall ──────────────────────────────────────────────
 def draw_zones(frame):

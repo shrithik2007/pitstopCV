@@ -192,21 +192,23 @@ def draw_trail(frame):
         cv2.line(frame, pts[i-1], pts[i], color, max(1, int(15 * ratio)), cv2.LINE_AA)
 
 # ── Track ─────────────────────────────────────────────────────
-def draw_track(frame):
-    overlay = frame.copy()
-    
-    # Calculate smooth track points dynamically
+TRACK_PTS_CACHE = None
+def get_track_pts():
+    global TRACK_PTS_CACHE
+    if TRACK_PTS_CACHE is not None: return TRACK_PTS_CACHE
     pts = []
-    # top straight
     for x in range(WALL_X, 800, 20): pts.append([x, 100])
-    # semi circle right turn
     for angle in range(-90, 91, 5):
         rad = math.radians(angle)
         pts.append([800 + int(260 * math.cos(rad)), 360 + int(260 * math.sin(rad))])
-    # bottom straight
     for x in range(800, WALL_X - 1, -20): pts.append([x, 620])
+    TRACK_PTS_CACHE = np.array(pts, np.int32)
+    return TRACK_PTS_CACHE
+
+def draw_track(frame):
+    overlay = frame.copy()
     
-    pts = np.array(pts, np.int32)
+    pts = get_track_pts()
     
     # Outer kerb (Red)
     cv2.polylines(overlay, [pts], isClosed=False, color=(20, 20, 220), thickness=160, lineType=cv2.LINE_AA)
@@ -273,7 +275,7 @@ def draw_checkpoints(frame):
 
 # ── HUD ───────────────────────────────────────────────────────
 def draw_hud(frame):
-    px1,py1,px2,py2 = 10,10,390,240
+    px1,py1,px2,py2 = 10,470,390,700
     ov = frame.copy()
     cv2.rectangle(ov, (px1,py1),(px2,py2), DARK_BG, -1)
     cv2.addWeighted(ov, 0.80, frame, 0.20, 0, frame)
@@ -281,32 +283,32 @@ def draw_hud(frame):
     cv2.rectangle(frame,(px1+3,py1+3),(px2-3,py2-3), NAVY, 1)
     cv2.rectangle(frame,(px1,py1),(px2,py1+5), RED, -1)
 
-    cv2.putText(frame, "ORACLE STRATEGY WALL",
-                (20,42), cv2.FONT_HERSHEY_DUPLEX, 0.68, YELLOW, 2, cv2.LINE_AA)
-    cv2.line(frame,(20,52),(px2-10,52), YELLOW, 1)
+    cv2.putText(frame, "RED BULL LIVE TELEMETRY",
+                (20,py1+32), cv2.FONT_HERSHEY_DUPLEX, 0.60, YELLOW, 2, cv2.LINE_AA)
+    cv2.line(frame,(20,py1+42),(px2-10,py1+42), YELLOW, 1)
 
     drs_txt = f"{drs_speed} KM/H" if race_state=="RACING" else "--- KM/H"
     cv2.putText(frame, f"DRS : {drs_txt}",
-                (20,78), cv2.FONT_HERSHEY_SIMPLEX, 0.6, LGRAY, 2, cv2.LINE_AA)
+                (20,py1+68), cv2.FONT_HERSHEY_SIMPLEX, 0.6, LGRAY, 2, cv2.LINE_AA)
 
     t_txt = f"{current_time:6.2f}s" if race_state=="RACING" else " --.-  "
     t_col = YELLOW if race_state=="RACING" else LGRAY
     cv2.putText(frame, f"CURRENT : {t_txt}",
-                (20,108), cv2.FONT_HERSHEY_SIMPLEX, 0.6, t_col, 2, cv2.LINE_AA)
+                (20,py1+98), cv2.FONT_HERSHEY_SIMPLEX, 0.6, t_col, 2, cv2.LINE_AA)
 
-    cv2.line(frame,(20,118),(px2-10,118), GRAY, 1)
+    cv2.line(frame,(20,py1+108),(px2-10,py1+108), GRAY, 1)
     lb = sorted(leaderboard)
     for rank, sfx in enumerate(["1ST","2ND","3RD"]):
         if rank < len(lb):
             txt, col = f"{sfx}: {lb[rank]:.2f}s", GREEN
         else:
             txt, col = f"{sfx}: --.-", GRAY
-        cv2.putText(frame, txt, (20, 140+rank*26),
+        cv2.putText(frame, txt, (20, py1+130+rank*26),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.58, col, 2, cv2.LINE_AA)
 
-    cv2.line(frame,(20,218),(px2-10,218), GRAY, 1)
+    cv2.line(frame,(20,py1+208),(px2-10,py1+208), GRAY, 1)
     cv2.putText(frame, session_msg,
-                (20,236), cv2.FONT_HERSHEY_SIMPLEX, 0.52, session_color, 2, cv2.LINE_AA)
+                (20,py1+226), cv2.FONT_HERSHEY_SIMPLEX, 0.52, session_color, 2, cv2.LINE_AA)
 
 # ── Flash overlay ─────────────────────────────────────────────
 def draw_flash(frame):
@@ -360,21 +362,25 @@ while cap.isOpened():
         if math.hypot(pinch_x-car_x, pinch_y-car_y) <= GRAB_DIST:
             is_dragging = True
     else:
-        if is_dragging and car_x >= WALL_X:
-            # PENALTY 2: dropped on track
-            _stop(snd_engine)
-            reset_car()
-            race_state    = "INVALID"
-            flash_until   = time.time() + 0.6
-            invalid_until = time.time() + 2.0
-            set_msg("PENALTY: CAR DROPPED ON TRACK!", RED)
         is_dragging = False
 
     if is_dragging:
-        # Exponential moving average for smoothness
-        car_x = int(car_x + (pinch_x - car_x) * 0.35)
-        car_y = int(car_y + (pinch_y - car_y) * 0.35)
+        # Exponential moving average for heavier smoothness
+        car_x = int(car_x + (pinch_x - car_x) * 0.25)
+        car_y = int(car_y + (pinch_y - car_y) * 0.25)
         trail.append((car_x, car_y))
+        
+        # Track limits checking !! Only if RACING and outside
+        if race_state == "RACING" and car_x >= WALL_X:
+            pts = get_track_pts()
+            min_dist = np.min(np.linalg.norm(pts - [car_x, car_y], axis=1))
+            if min_dist > 80:
+                _stop(snd_engine)
+                flash_until   = time.time() + 0.6
+                invalid_until = time.time() + 2.0
+                race_state    = "INVALID"
+                reset_lap()
+                set_msg("TRACK LIMITS EXCEEDED", RED)
 
         # GARAGE -> TRACK: start race
         if prev_x < WALL_X and car_x >= WALL_X and race_state in ("IDLE", "INVALID"):

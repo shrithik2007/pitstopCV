@@ -391,14 +391,13 @@ while cap.isOpened():
         is_dragging = False
 
     if is_dragging:
+        # Calculate trailing angle based on hand movement intent before friction
+        if math.hypot(pinch_x - car_x, pinch_y - car_y) > 8:
+            car_angle = math.atan2(pinch_y - car_y, pinch_x - car_x)
+            
         # Exponential moving average for heavier smoothness
         car_x = int(car_x + (pinch_x - car_x) * 0.25)
         car_y = int(car_y + (pinch_y - car_y) * 0.25)
-        
-        # Calculate trailing angle based on movement deltas
-        speed_px_calc = math.hypot(car_x - prev_x, car_y - prev_y)
-        if speed_px_calc > 3:
-            car_angle = math.atan2(car_y - prev_y, car_x - prev_x)
 
         trail.append((car_x, car_y))
         

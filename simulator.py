@@ -41,12 +41,12 @@ LGRAY    = (200, 200, 200)
 
 # ── Constants ─────────────────────────────────────────────────
 WALL_X      = 250
-GARAGE_X    = 125
-GARAGE_Y    = 300
+GARAGE_X    = 150
+GARAGE_Y    = 100
 PINCH_DIST  = 60
 GRAB_DIST   = 100
 CP_RADIUS   = 40
-CHECKPOINTS = [(400, 150), (800, 350), (400, 550)]
+CHECKPOINTS = [(500, 100), (1060, 360), (500, 620)]
 
 # ── MediaPipe ─────────────────────────────────────────────────
 HERE       = os.path.dirname(os.path.abspath(__file__))
@@ -108,7 +108,7 @@ current_time   = 0.0
 cp_cleared     = [False, False, False]
 cp_flash       = [0.0, 0.0, 0.0]
 leaderboard    = []
-drs_speed      = 300
+drs_speed      = 0
 session_msg    = "AWAITING DEPLOYMENT"
 session_color  = YELLOW
 flash_until    = 0.0
@@ -121,7 +121,7 @@ def set_msg(text, color):
     session_msg, session_color = text, color
 
 def reset_car():
-    global car_x, car_y, cp_cleared, current_time, cp_flash
+    global car_x, car_y, cp_cleared, current_time, cp_flash, drs_speed
     car_x, car_y = GARAGE_X, GARAGE_Y
     cp_cleared   = [False, False, False]
     cp_flash     = [0.0, 0.0, 0.0]
@@ -198,13 +198,13 @@ def draw_track(frame):
     # Calculate smooth track points dynamically
     pts = []
     # top straight
-    for x in range(WALL_X, 600, 20): pts.append([x, 150])
+    for x in range(WALL_X, 800, 20): pts.append([x, 100])
     # semi circle right turn
     for angle in range(-90, 91, 5):
         rad = math.radians(angle)
-        pts.append([600 + int(200 * math.cos(rad)), 350 + int(200 * math.sin(rad))])
+        pts.append([800 + int(260 * math.cos(rad)), 360 + int(260 * math.sin(rad))])
     # bottom straight
-    for x in range(600, WALL_X - 1, -20): pts.append([x, 550])
+    for x in range(800, WALL_X - 1, -20): pts.append([x, 620])
     
     pts = np.array(pts, np.int32)
     
@@ -218,13 +218,13 @@ def draw_track(frame):
     cv2.addWeighted(overlay, 0.85, frame, 0.15, 0, frame)
 
     # Start/Finish checkerboards at garage exit/entry
-    for y in range(90, 210, 20):
+    for y in range(40, 160, 20):
         cv2.rectangle(frame, (WALL_X, y), (WALL_X + 10, y + 10), WHITE, -1)
         cv2.rectangle(frame, (WALL_X + 10, y + 10), (WALL_X + 20, y + 20), WHITE, -1)
         cv2.rectangle(frame, (WALL_X + 10, y), (WALL_X + 20, y + 10), BLACK, -1)
         cv2.rectangle(frame, (WALL_X, y + 10), (WALL_X + 10, y + 20), BLACK, -1)
 
-    for y in range(490, 610, 20):
+    for y in range(560, 680, 20):
         cv2.rectangle(frame, (WALL_X, y), (WALL_X + 10, y + 10), WHITE, -1)
         cv2.rectangle(frame, (WALL_X + 10, y + 10), (WALL_X + 20, y + 20), WHITE, -1)
         cv2.rectangle(frame, (WALL_X + 10, y), (WALL_X + 20, y + 10), BLACK, -1)
@@ -422,7 +422,11 @@ while cap.isOpened():
     # Live timer + DRS
     if race_state == "RACING":
         current_time = time.time() - start_time
-        drs_speed    = random.randint(280, 320)
+        speed_px = math.hypot(car_x - prev_x, car_y - prev_y)
+        target_kmh = int(speed_px * 20.0)
+        drs_speed = int(drs_speed * 0.85 + target_kmh * 0.15)
+        if is_dragging and target_kmh < 10:
+            drs_speed = max(10, drs_speed - 2)
 
     # Render
     draw_checkpoints(frame)

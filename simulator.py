@@ -43,8 +43,8 @@ LGRAY    = (200, 200, 200)
 WALL_X      = 250
 GARAGE_X    = 125
 GARAGE_Y    = 300
-PINCH_DIST  = 40
-GRAB_DIST   = 80
+PINCH_DIST  = 60
+GRAB_DIST   = 100
 CP_RADIUS   = 40
 CHECKPOINTS = [(400, 150), (800, 350), (400, 550)]
 
@@ -106,6 +106,7 @@ race_state     = "IDLE"          # IDLE | RACING | INVALID
 start_time     = 0.0
 current_time   = 0.0
 cp_cleared     = [False, False, False]
+cp_flash       = [0.0, 0.0, 0.0]
 leaderboard    = []
 drs_speed      = 300
 session_msg    = "AWAITING DEPLOYMENT"
@@ -120,15 +121,17 @@ def set_msg(text, color):
     session_msg, session_color = text, color
 
 def reset_car():
-    global car_x, car_y, cp_cleared, current_time
+    global car_x, car_y, cp_cleared, current_time, cp_flash
     car_x, car_y = GARAGE_X, GARAGE_Y
     cp_cleared   = [False, False, False]
+    cp_flash     = [0.0, 0.0, 0.0]
     current_time = 0.0
     trail.clear()
 
 def reset_lap():
-    global cp_cleared, current_time
+    global cp_cleared, current_time, cp_flash
     cp_cleared   = [False, False, False]
+    cp_flash     = [0.0, 0.0, 0.0]
     current_time = 0.0
     trail.clear()
 
@@ -185,21 +188,25 @@ def draw_trail(frame):
     pts = list(trail)
     for i in range(1, len(pts)):
         ratio = i / len(pts)
-        cv2.line(frame, pts[i-1], pts[i],
-                 (0, int(140*(1-ratio)), 255), max(1,int(8*ratio)), cv2.LINE_AA)
+        color = (0, int(180*(1-ratio)), 255) if ratio > 0.5 else (0, 0, int(255*ratio*2))
+        cv2.line(frame, pts[i-1], pts[i], color, max(1, int(15 * ratio)), cv2.LINE_AA)
 
 # ── Track ─────────────────────────────────────────────────────
 def draw_track(frame):
     overlay = frame.copy()
     
-    # Main track line
-    pts = np.array([
-        [WALL_X, 150],
-        [400, 150],
-        [800, 350],
-        [400, 550],
-        [WALL_X, 550]
-    ], np.int32)
+    # Calculate smooth track points dynamically
+    pts = []
+    # top straight
+    for x in range(WALL_X, 600, 20): pts.append([x, 150])
+    # semi circle right turn
+    for angle in range(-90, 91, 5):
+        rad = math.radians(angle)
+        pts.append([600 + int(200 * math.cos(rad)), 350 + int(200 * math.sin(rad))])
+    # bottom straight
+    for x in range(600, WALL_X - 1, -20): pts.append([x, 550])
+    
+    pts = np.array(pts, np.int32)
     
     # Outer kerb (Red)
     cv2.polylines(overlay, [pts], isClosed=False, color=(20, 20, 220), thickness=160, lineType=cv2.LINE_AA)
@@ -245,6 +252,14 @@ def draw_checkpoints(frame):
     for i, (cx, cy) in enumerate(CHECKPOINTS):
         if cx >= FW or cy >= FH: continue
         lbl = f"CP{i+1}"
+        
+        # Explosion / Pulse effect
+        t_elapsed = time.time() - cp_flash[i]
+        if t_elapsed < 0.5:
+            expand_r = CP_RADIUS + int(60 * (t_elapsed / 0.5))
+            thick = max(1, 5 - int(5 * t_elapsed / 0.5))
+            cv2.circle(frame, (cx, cy), expand_r, GREEN, thick)
+
         if cp_cleared[i]:
             cv2.circle(frame, (cx,cy), CP_RADIUS, GREEN, -1)
             cv2.circle(frame, (cx,cy), CP_RADIUS, WHITE, 2)
@@ -356,7 +371,9 @@ while cap.isOpened():
         is_dragging = False
 
     if is_dragging:
-        car_x, car_y = pinch_x, pinch_y
+        # Exponential moving average for smoothness
+        car_x = int(car_x + (pinch_x - car_x) * 0.35)
+        car_y = int(car_y + (pinch_y - car_y) * 0.35)
         trail.append((car_x, car_y))
 
         # GARAGE -> TRACK: start race
@@ -393,6 +410,7 @@ while cap.isOpened():
                 cpx, cpy = CHECKPOINTS[nxt]
                 if math.hypot(car_x-cpx, car_y-cpy) < CP_RADIUS:
                     cp_cleared[nxt] = True
+                    cp_flash[nxt] = time.time()
                     n = sum(cp_cleared)
                     set_msg(f"CHECKPOINT {n}/3 CLEARED!", YELLOW)
 

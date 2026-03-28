@@ -45,7 +45,7 @@ GARAGE_X    = 150
 GARAGE_Y    = 100
 PINCH_DIST  = 60
 GRAB_DIST   = 100
-CP_RADIUS   = 40
+CP_RADIUS   = 80
 CHECKPOINTS = [(500, 100), (1060, 360), (500, 620)]
 
 # ── MediaPipe ─────────────────────────────────────────────────

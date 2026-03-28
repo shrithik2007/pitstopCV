@@ -101,6 +101,7 @@ def _stop(s):
 
 # ── Game State ────────────────────────────────────────────────
 car_x, car_y   = GARAGE_X, GARAGE_Y
+car_angle      = 0.0
 is_dragging    = False
 race_state     = "IDLE"          # IDLE | RACING | INVALID
 start_time     = 0.0
@@ -121,67 +122,83 @@ def set_msg(text, color):
     session_msg, session_color = text, color
 
 def reset_car():
-    global car_x, car_y, cp_cleared, current_time, cp_flash, drs_speed
+    global car_x, car_y, car_angle, cp_cleared, current_time, cp_flash, drs_speed
     car_x, car_y = GARAGE_X, GARAGE_Y
+    car_angle    = 0.0
     cp_cleared   = [False, False, False]
     cp_flash     = [0.0, 0.0, 0.0]
     current_time = 0.0
     trail.clear()
 
 def reset_lap():
-    global cp_cleared, current_time, cp_flash
+    global cp_cleared, current_time, cp_flash, car_angle
+    car_angle    = 0.0
     cp_cleared   = [False, False, False]
     cp_flash     = [0.0, 0.0, 0.0]
     current_time = 0.0
     trail.clear()
 
 # ── Procedural F1 Car ─────────────────────────────────────────
-def draw_f1_car(frame, cx, cy):
+def draw_f1_car(frame, cx, cy, angle=-math.pi/2):
+    theta = angle + math.pi/2
+    c, s = math.cos(theta), math.sin(theta)
+    
+    def rot(pts):
+        res = []
+        for x, y in pts:
+            nx = int(x * c - y * s)
+            ny = int(x * s + y * c)
+            res.append([cx + nx, cy + ny])
+        return np.array(res, np.int32)
+
     # Fuselage
-    fuselage = np.array([
-        [cx-10, cy-55],[cx+10, cy-55],
-        [cx+18, cy+50],[cx-18, cy+50]], np.int32)
+    fuselage = rot([[-10, -55], [10, -55], [18, 50], [-18, 50]])
     cv2.fillPoly(frame, [fuselage], NAVY)
 
     # Front wing
-    fw = np.array([
-        [cx-50, cy-48],[cx+50, cy-48],
-        [cx+42, cy-33],[cx-42, cy-33]], np.int32)
+    fw = rot([[-50, -48], [50, -48], [42, -33], [-42, -33]])
     cv2.fillPoly(frame, [fw], NAVY)
+    
     # Front endplates (Yellow)
-    cv2.fillPoly(frame, [np.array([
-        [cx-57,cy-52],[cx-45,cy-52],[cx-42,cy-27],[cx-54,cy-27]], np.int32)], YELLOW)
-    cv2.fillPoly(frame, [np.array([
-        [cx+45,cy-52],[cx+57,cy-52],[cx+54,cy-27],[cx+42,cy-27]], np.int32)], YELLOW)
+    f_ep1 = rot([[-57, -52], [-45, -52], [-42, -27], [-54, -27]])
+    f_ep2 = rot([[45, -52], [57, -52], [54, -27], [42, -27]])
+    cv2.fillPoly(frame, [f_ep1], YELLOW)
+    cv2.fillPoly(frame, [f_ep2], YELLOW)
 
     # Rear wing
-    rw = np.array([
-        [cx-44, cy+34],[cx+44, cy+34],
-        [cx+38, cy+50],[cx-38, cy+50]], np.int32)
+    rw = rot([[-44, 34], [44, 34], [38, 50], [-38, 50]])
     cv2.fillPoly(frame, [rw], NAVY)
+    
     # Rear endplates (Red)
-    cv2.fillPoly(frame, [np.array([
-        [cx-48,cy+31],[cx-38,cy+31],[cx-34,cy+55],[cx-46,cy+55]], np.int32)], RED)
-    cv2.fillPoly(frame, [np.array([
-        [cx+38,cy+31],[cx+48,cy+31],[cx+46,cy+55],[cx+34,cy+55]], np.int32)], RED)
+    r_ep1 = rot([[-48, 31], [-38, 31], [-34, 55], [-46, 55]])
+    r_ep2 = rot([[38, 31], [48, 31], [46, 55], [34, 55]])
+    cv2.fillPoly(frame, [r_ep1], RED)
+    cv2.fillPoly(frame, [r_ep2], RED)
 
-    # Tires (dark gray)
+    # Tires (dark gray) Convert rectangles to polygon coordinates for rotation
     tc = (28, 28, 28)
-    for rect in [
-        ((cx-36, cy-50),(cx-19, cy-22)),
-        ((cx+19, cy-50),(cx+36, cy-22)),
-        ((cx-34, cy+18),(cx-17, cy+50)),
-        ((cx+17, cy+18),(cx+34, cy+50)),
-    ]:
-        cv2.rectangle(frame, rect[0], rect[1], tc, -1)
-        cv2.rectangle(frame, rect[0], rect[1], GRAY, 1)
+    tires = [
+        [[-36, -50], [-19, -50], [-19, -22], [-36, -22]],
+        [[19, -50],  [36, -50],  [36, -22],  [19, -22]],
+        [[-34, 18],  [-17, 18],  [-17, 50],  [-34, 50]],
+        [[17, 18],   [34, 18],   [34, 50],   [17, 50]]
+    ]
+    for tire_pts in tires:
+        t_poly = rot(tire_pts)
+        cv2.fillPoly(frame, [t_poly], tc)
+        cv2.polylines(frame, [t_poly], isClosed=True, color=GRAY, thickness=1)
 
     # Cockpit
-    cv2.ellipse(frame, (cx, cy-6), (9,12), 0, 0, 360, WHITE, -1)
+    cock_c = rot([[0, -6]])[0]
+    cv2.ellipse(frame, tuple(cock_c), (9,12), math.degrees(theta), 0, 360, WHITE, -1)
+    
     # Center stripe
-    cv2.line(frame, (cx, cy-55), (cx, cy+50), YELLOW, 3)
+    c_start, c_end = rot([[0, -55], [0, 50]])
+    cv2.line(frame, tuple(c_start), tuple(c_end), YELLOW, 3)
+    
     # Nose tip
-    cv2.circle(frame, (cx, cy-55), 5, RED, -1)
+    n_tip = rot([[0, -55]])[0]
+    cv2.circle(frame, tuple(n_tip), 5, RED, -1)
 
 # ── Trail ─────────────────────────────────────────────────────
 def draw_trail(frame):
@@ -377,6 +394,12 @@ while cap.isOpened():
         # Exponential moving average for heavier smoothness
         car_x = int(car_x + (pinch_x - car_x) * 0.25)
         car_y = int(car_y + (pinch_y - car_y) * 0.25)
+        
+        # Calculate trailing angle based on movement deltas
+        speed_px_calc = math.hypot(car_x - prev_x, car_y - prev_y)
+        if speed_px_calc > 3:
+            car_angle = math.atan2(car_y - prev_y, car_x - prev_x)
+
         trail.append((car_x, car_y))
         
         # Track limits checking !! Only if RACING and outside
@@ -393,30 +416,41 @@ while cap.isOpened():
 
         # GARAGE -> TRACK: start race
         if prev_x < WALL_X and car_x >= WALL_X and race_state in ("IDLE", "INVALID"):
-            race_state   = "RACING"
-            start_time   = time.time()
-            current_time = 0.0
-            cp_cleared   = [False, False, False]
-            _play(snd_engine, loops=-1)
-            set_msg("GO GO GO!", GREEN)
+            if abs(car_y - 100) < 60:
+                race_state   = "RACING"
+                start_time   = time.time()
+                current_time = 0.0
+                cp_cleared   = [False, False, False]
+                _play(snd_engine, loops=-1)
+                set_msg("GO GO GO!", GREEN)
+            else:
+                set_msg("MUST START AT TOP START LINE!", RED)
 
         # TRACK -> GARAGE: end lap
         if prev_x >= WALL_X and car_x < WALL_X and race_state == "RACING":
-            if all(cp_cleared):
-                lap = round(current_time, 2)
-                leaderboard.append(lap)
-                _stop(snd_engine); _play(snd_box)
-                race_state = "IDLE"
-                reset_lap()
-                set_msg(f"LAP COMPLETE: {lap:.2f}s", GREEN)
+            if abs(car_y - 620) < 60:
+                if all(cp_cleared):
+                    lap = round(current_time, 2)
+                    leaderboard.append(lap)
+                    _stop(snd_engine); _play(snd_box)
+                    race_state = "IDLE"
+                    reset_lap()
+                    set_msg(f"LAP COMPLETE: {lap:.2f}s", GREEN)
+                else:
+                    # PENALTY 1: missed checkpoints
+                    _stop(snd_engine)
+                    flash_until   = time.time() + 0.6
+                    invalid_until = time.time() + 2.0
+                    race_state    = "INVALID"
+                    reset_lap()
+                    set_msg("LAP INVALIDATED - MISSED CHECKPOINTS", RED)
             else:
-                # PENALTY 1: missed checkpoints
                 _stop(snd_engine)
                 flash_until   = time.time() + 0.6
                 invalid_until = time.time() + 2.0
                 race_state    = "INVALID"
                 reset_lap()
-                set_msg("LAP INVALIDATED - MISSED CHECKPOINTS", RED)
+                set_msg("LAP INVALIDATED - CROSSED WRONG LINE", RED)
 
         # Checkpoint detection
         if race_state == "RACING":
@@ -446,7 +480,7 @@ while cap.isOpened():
     # Render
     draw_checkpoints(frame)
     draw_trail(frame)
-    draw_f1_car(frame, car_x, car_y)
+    draw_f1_car(frame, car_x, car_y, car_angle)
     draw_flash(frame)
     draw_hud(frame)
 

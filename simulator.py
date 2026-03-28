@@ -188,6 +188,41 @@ def draw_trail(frame):
         cv2.line(frame, pts[i-1], pts[i],
                  (0, int(140*(1-ratio)), 255), max(1,int(8*ratio)), cv2.LINE_AA)
 
+# ── Track ─────────────────────────────────────────────────────
+def draw_track(frame):
+    overlay = frame.copy()
+    
+    # Main track line
+    pts = np.array([
+        [WALL_X, 150],
+        [400, 150],
+        [800, 350],
+        [400, 550],
+        [WALL_X, 550]
+    ], np.int32)
+    
+    # Outer kerb (Red)
+    cv2.polylines(overlay, [pts], isClosed=False, color=(20, 20, 220), thickness=160, lineType=cv2.LINE_AA)
+    # Inner kerb (White)
+    cv2.polylines(overlay, [pts], isClosed=False, color=(230, 230, 230), thickness=140, lineType=cv2.LINE_AA)
+    # Asphalt
+    cv2.polylines(overlay, [pts], isClosed=False, color=(45, 45, 45), thickness=120, lineType=cv2.LINE_AA)
+    
+    cv2.addWeighted(overlay, 0.85, frame, 0.15, 0, frame)
+
+    # Start/Finish checkerboards at garage exit/entry
+    for y in range(90, 210, 20):
+        cv2.rectangle(frame, (WALL_X, y), (WALL_X + 10, y + 10), WHITE, -1)
+        cv2.rectangle(frame, (WALL_X + 10, y + 10), (WALL_X + 20, y + 20), WHITE, -1)
+        cv2.rectangle(frame, (WALL_X + 10, y), (WALL_X + 20, y + 10), BLACK, -1)
+        cv2.rectangle(frame, (WALL_X, y + 10), (WALL_X + 10, y + 20), BLACK, -1)
+
+    for y in range(490, 610, 20):
+        cv2.rectangle(frame, (WALL_X, y), (WALL_X + 10, y + 10), WHITE, -1)
+        cv2.rectangle(frame, (WALL_X + 10, y + 10), (WALL_X + 20, y + 20), WHITE, -1)
+        cv2.rectangle(frame, (WALL_X + 10, y), (WALL_X + 20, y + 10), BLACK, -1)
+        cv2.rectangle(frame, (WALL_X, y + 10), (WALL_X + 10, y + 20), BLACK, -1)
+
 # ── Zones & Wall ──────────────────────────────────────────────
 def draw_zones(frame):
     h, w = frame.shape[:2]
@@ -278,6 +313,7 @@ while cap.isOpened():
     frame = cv2.flip(frame, 1)
     fh, fw = 720, 1280
 
+    draw_track(frame)
     draw_zones(frame)
 
     # Hand tracking
